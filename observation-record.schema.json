@@ -1,0 +1,256 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://navy-yard.example/schemas/observation-record.schema.json",
+  "title": "Navy Yard Digital Anthropology Observation Record",
+  "description": "A privacy-bounded record of a work episode. Codes describe episode conditions, not people.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "study_id",
+    "episode_id",
+    "question",
+    "observation_mode",
+    "identity_scope",
+    "privacy_class",
+    "evidence",
+    "status"
+  ],
+  "properties": {
+    "study_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "episode_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "question": {
+      "type": "string",
+      "minLength": 1
+    },
+    "working_hypothesis": {
+      "type": "string"
+    },
+    "task_family": {
+      "type": "string"
+    },
+    "bounded_goal": {
+      "type": "string"
+    },
+    "observation_mode": {
+      "type": "string",
+      "enum": [
+        "live",
+        "replay",
+        "archive",
+        "artifact_comparison",
+        "participant_account"
+      ]
+    },
+    "systems": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "identity_scope": {
+      "type": "string",
+      "enum": [
+        "personal",
+        "work",
+        "study_group",
+        "collaborator",
+        "agent",
+        "mixed_approved"
+      ]
+    },
+    "privacy_class": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2", "P3"]
+    },
+    "notice_consent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "pause_path", "correction_path"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["not_applicable", "pending", "approved", "withdrawn"]
+        },
+        "pause_path": {
+          "type": "string"
+        },
+        "correction_path": {
+          "type": "string"
+        },
+        "withdrawal_path": {
+          "type": "string"
+        },
+        "deletion_path": {
+          "type": "string"
+        },
+        "appeal_path": {
+          "type": "string"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context_package_id": { "type": "string" },
+        "role_id": { "type": "string" },
+        "skill_id": { "type": "string" },
+        "skill_version": { "type": "string" },
+        "workbench_id": { "type": "string" },
+        "model_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "tool_ids": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
+        "design_record_id": { "type": "string" }
+      }
+    },
+    "artifact_checkpoints": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["checkpoint_id", "artifact_class", "status"],
+        "properties": {
+          "checkpoint_id": { "type": "string" },
+          "artifact_class": { "type": "string" },
+          "source_ref": { "type": "string" },
+          "status": {
+            "type": "string",
+            "enum": [
+              "not_started",
+              "draft",
+              "candidate",
+              "verified",
+              "delivered",
+              "accepted_or_used",
+              "blocked_or_abandoned",
+              "unknown"
+            ]
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "event_type", "evidence_type"],
+        "properties": {
+          "event_id": { "type": "string" },
+          "event_type": { "type": "string" },
+          "coarse_time": { "type": "string" },
+          "actor_type": {
+            "type": "string",
+            "enum": ["human", "agent", "tool", "system", "unknown"]
+          },
+          "evidence_type": {
+            "type": "string",
+            "enum": ["OBS-LIVE", "OBS-REPLAY", "SYS-RECORD", "ART-STATE", "PART-REPORT", "ANALYST-INFER"]
+          },
+          "source_ref": { "type": "string" },
+          "redacted_summary": { "type": "string" }
+        }
+      }
+    },
+    "condition_codes": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "context": { "type": "array", "items": { "type": "string", "pattern": "^C[0-3]$" } },
+        "ambiguity": { "type": "array", "items": { "type": "string", "pattern": "^A[0-3]$" } },
+        "retries": { "type": "array", "items": { "type": "string", "pattern": "^R[0-4]$" } },
+        "corrections": { "type": "array", "items": { "type": "string", "pattern": "^K[0-6]$" } },
+        "handoffs": { "type": "array", "items": { "type": "string", "pattern": "^H[0-4]$" } },
+        "delays": { "type": "array", "items": { "type": "string", "pattern": "^D[0-4]$" } },
+        "burden": { "type": "array", "items": { "type": "string", "pattern": "^B[0-4]$" } },
+        "privacy": { "type": "array", "items": { "type": "string", "pattern": "^P[0-3]$" } }
+      }
+    },
+    "decisions_and_warrants": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["decision", "decision_owner", "warrant_or_unknown"],
+        "properties": {
+          "decision": { "type": "string" },
+          "decision_owner": { "type": "string" },
+          "warrant_or_unknown": { "type": "string" },
+          "source_ref": { "type": "string" }
+        }
+      }
+    },
+    "participant_account": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "summary": { "type": "string" },
+        "corrections": { "type": "array", "items": { "type": "string" } },
+        "disagreements": { "type": "array", "items": { "type": "string" } },
+        "withdrawn_or_withheld": { "type": "boolean" }
+      }
+    },
+    "verification": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["signal_type", "result"],
+        "properties": {
+          "signal_type": { "type": "string" },
+          "result": { "type": "string" },
+          "source_ref": { "type": "string" },
+          "owner": { "type": "string" }
+        }
+      }
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "claim": { "type": "string" },
+        "interpretation": { "type": "string" },
+        "uncertainty": { "type": "string" },
+        "negative_case": { "type": "string" },
+        "hypothesis": { "type": "string" },
+        "proposed_owner": { "type": "string" },
+        "output_type": {
+          "type": "string",
+          "enum": ["observation", "reconstruction", "interpretation", "finding", "recommendation", "decision", "implementation", "verification", "outcome", "memory"]
+        }
+      }
+    },
+    "retention": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_of_truth", "disposition"],
+      "properties": {
+        "source_of_truth": { "type": "string" },
+        "retention_rule": { "type": "string" },
+        "disposition": {
+          "type": "string",
+          "enum": ["retain_source", "retain_derived_only", "delete_source", "delete_all", "pending_review"]
+        }
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": ["planned", "observed", "coded", "under_review", "finding_issued", "routed", "closed", "withdrawn"]
+    }
+  }
+}
