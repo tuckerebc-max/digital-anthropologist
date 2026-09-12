@@ -74,7 +74,7 @@ def git(path, *args):
         for section in sorted({key.rsplit('.', 1)[0] for key in filters.stdout.split('\0') if key}):
             for option, value in [('clean', ''), ('process', ''), ('smudge', ''), ('required', 'false')]:
                 prefix.extend(['-c', section + '.' + option + '=' + value])
-        args = (*args, '--ignore-submodules=all')
+        args = (*args, '--ignore-submodules=dirty')
     result = invoke(prefix + list(args))
     return result.returncode, result.stdout
 
@@ -174,10 +174,10 @@ def scan(roots, *, study_id):
     skipped_links = skipped_bare = 0
 
     for root in roots:
-        if not root.is_dir():
-            errors.append({'path': redact(display_path(root)), 'error': 'missing_or_non_directory_root'})
-            continue
         try:
+            if not root.is_dir():
+                errors.append({'path': redact(display_path(root)), 'error': 'missing_or_non_directory_root'})
+                continue
             if root.is_symlink() or getattr(root.lstat(), 'st_file_attributes', 0) & 1024:
                 skipped_links += 1
                 continue

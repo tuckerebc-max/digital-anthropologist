@@ -237,6 +237,37 @@ class InventoryTests(unittest.TestCase):
         self.assertEqual(report['summary']['errors'], 1)
         self.assertEqual(report['errors'][0]['error'], 'TimeoutExpired')
 
+    def test_root_permission_error_keeps_other_root_evidence(self):
+        good = self.repo()
+        bad = self.root / 'denied'
+        bad.mkdir()
+        real_is_dir = Path.is_dir
+        def denied_one_root(path):
+            if inventory.display_path(path) == str(bad):
+                raise PermissionError('fixture')
+            return real_is_dir(path)
+        with patch.object(Path, 'is_dir', denied_one_root):
+            report = inventory.scan([good, bad], study_id='TEST-1')
+        self.assertEqual(report['summary']['checkouts'], 1)
+        self.assertEqual(report['summary']['errors'], 1)
+        self.assertEqual(report['errors'][0]['error'], 'PermissionError')
+
+    def test_staged_submodule_revision_is_a_parent_change(self):
+        parent = self.repo('parent')
+        source = self.repo('module-source')
+        self.git(parent, '-c', 'protocol.file.allow=always', 'submodule', 'add', str(source), 'module')
+        self.git(parent, 'commit', '-am', 'Add module')
+        child = parent / 'module'
+        self.git(child, 'config', 'user.name', 'Fixture')
+        self.git(child, 'config', 'user.email', 'fixture@example.invalid')
+        (child / 'app.py').write_text('print(90)\n')
+        self.git(child, 'commit', '-am', 'Module revision')
+        self.git(parent, 'add', 'module')
+        report = self.scan(parent)
+        item = next(x for x in report['repositories'] if x['path'] == str(parent))
+        self.assertEqual(item['tracked_changes'], 1)
+        self.assertIn('working_copy_changes', item['review_reasons'])
+
     def test_missing_root_is_visible_coverage_error(self):
         report = self.scan(self.root / 'does-not-exist')
         self.assertEqual(report['summary']['errors'], 1)
