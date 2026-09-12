@@ -54,12 +54,28 @@ def digest(value):
 
 
 def git(path, *args):
-    result = subprocess.run(
-        ['git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false',
-         '-c', 'core.longpaths=true', '-C', str(path), *args],
-        capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=20,
-        env={**os.environ, 'GIT_OPTIONAL_LOCKS': '0', 'GIT_TERMINAL_PROMPT': '0'},
-    )
+    # Inherited Git routing variables must not redirect a scoped command elsewhere.
+    environment = {k: v for k, v in os.environ.items() if not k.upper().startswith('GIT_')}
+    environment.update(GIT_OPTIONAL_LOCKS='0', GIT_TERMINAL_PROMPT='0', GIT_NO_REPLACE_OBJECTS='1')
+    prefix = ['git', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false',
+              '-c', 'core.longpaths=true', '-c', 'status.submoduleSummary=false', '-C', str(path)]
+
+    def invoke(command):
+        return subprocess.run(command, capture_output=True, text=True, encoding='utf-8',
+                              errors='replace', timeout=20, env=environment)
+
+    if args and args[0] == 'status':
+        # Status can execute clean/process filters while refreshing the index.
+        # Enumerate names only, then override every configured filter in this process.
+        filters = invoke(prefix + ['config', '--null', '--name-only', '--get-regexp',
+                                   r'^filter\..*\.(clean|process|smudge|required)$'])
+        if filters.returncode not in (0, 1):
+            return filters.returncode, ''
+        for section in sorted({key.rsplit('.', 1)[0] for key in filters.stdout.split('\0') if key}):
+            for option, value in [('clean', ''), ('process', ''), ('smudge', ''), ('required', 'false')]:
+                prefix.extend(['-c', section + '.' + option + '=' + value])
+        args = (*args, '--ignore-submodules=all')
+    result = invoke(prefix + list(args))
     return result.returncode, result.stdout
 
 
@@ -79,20 +95,27 @@ def inspect_repository(path):
         common = read('rev-parse', '--path-format=absolute', '--git-common-dir')
         if common is None:
             return {'path': label, 'error': 'git_identity_failed'}
+        inspection_errors = []
         remote_names = (read('remote') or '').splitlines()
         remotes = []
         for name in remote_names:
             url = read('remote', 'get-url', name) or ''
-            kind = 'network' if ('://' in url and not url.startswith('file://')) or re.match(r'^[^/\\]+@[^:]+:', url) else 'local'
+            scp = re.match(r'^[^/\\:]+:', url) and not re.match(r'^[a-zA-Z]:[\\/]', url)
+            kind = 'network' if ('://' in url and not url.startswith('file://')) or scp else 'local'
             remotes.append({'name': redact(name), 'url': safe_remote(url), 'kind': kind})
         origin = next((r['url'] for r in remotes if r['name'] == 'origin'), '')
         remote_kind = 'network' if any(r['kind'] == 'network' for r in remotes) else 'local' if remotes else 'none'
         upstream = read('rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}')
+        configured_upstream = read('config', '--get', 'branch.' + branch + '.remote') if branch else None
+        if head and configured_upstream and not upstream:
+            inspection_errors.append('upstream_unresolved')
         ahead = behind = None
         if head and upstream:
             counts = read('rev-list', '--left-right', '--count', 'HEAD...@{u}')
             if counts:
                 ahead, behind = map(int, counts.split())
+            else:
+                inspection_errors.append('upstream_comparison_failed')
         entries = iter(status.split('\0'))
         tracked = untracked = 0
         for entry in entries:
@@ -119,7 +142,9 @@ def inspect_repository(path):
         if state != 'branch':
             reasons.append(state)
         safe_origin = safe_remote(origin)
-        revision_origin = next((r['url'] for r in remotes if r['kind'] == 'network'), safe_origin)
+        revision_origin = next((r['url'] for r in remotes if r['name'] == 'origin' and r['kind'] == 'network'), None)
+        if revision_origin is None:
+            revision_origin = next((r['url'] for r in remotes if r['kind'] == 'network'), safe_origin)
         return {
             'path': label, 'repository_id': digest(os.path.normcase(display_path(common))),
             'revision_group': digest((revision_origin or 'unassigned') + ':' + (head or common)),
@@ -131,6 +156,7 @@ def inspect_repository(path):
             'tracked_changes': tracked, 'untracked_entries': untracked,
             'publication': 'unknown', 'remote_observed_at': None,
             'review_reasons': reasons,
+            'inspection_errors': inspection_errors,
         }
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
         return {'path': label, 'error': type(exc).__name__}
@@ -160,7 +186,11 @@ def scan(roots, *, study_id):
             continue
         # A scoped subtree can already be inside a repository outside the scope.
         # Avoid classifying its code as unversioned without expanding that scope.
-        code, _ = git(root, 'rev-parse', '--show-toplevel')
+        try:
+            code, _ = git(root, 'rev-parse', '--show-toplevel')
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            errors.append({'path': redact(display_path(root)), 'error': type(exc).__name__})
+            continue
         stack = [(root, code == 0)]
         while stack:
             path, in_repo = stack.pop()
@@ -203,6 +233,8 @@ def scan(roots, *, study_id):
     for result in results:
         if result.get('error'):
             errors.append(result)
+        for error in result.get('inspection_errors', []):
+            errors.append({'path': result['path'], 'error': error})
     valid = [r for r in results if not r.get('error')]
     return {
         'schema_version': 1, 'study_id': redact(study_id),
@@ -222,6 +254,8 @@ def scan(roots, *, study_id):
             'Untracked counts are Git status entries, which may summarize whole directories.',
             'Dependency/build directories, symlinks, Windows reparse directories, and bare repositories are excluded.',
             'The scan is not an atomic snapshot; active work can change during collection.',
+            'Git may read working-tree bytes for status; no file contents are retained. Configured filters/fsmonitor are disabled.',
+            'Submodule dirtiness is ignored in parent status; discovered submodule checkouts are inspected separately.',
             'Redaction covers common token formats and remote URL credentials, not all possible sensitive text. Review before sharing.',
         ],
     }

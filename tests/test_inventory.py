@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import yard_inventory as inventory
@@ -153,6 +154,81 @@ class InventoryTests(unittest.TestCase):
         item = self.scan()['repositories'][0]
         self.assertEqual(item['remote_kind'], 'network')
         self.assertNotIn('local_remote_only', item['review_reasons'])
+
+    def test_configured_clean_filter_is_never_executed(self):
+        path = self.repo()
+        (path / '.gitattributes').write_text('tracked.txt filter=review_probe\n')
+        tracked = path / 'tracked.txt'
+        tracked.write_text('before\n')
+        self.git(path, 'add', '.gitattributes', 'tracked.txt')
+        self.git(path, 'commit', '-m', 'Filter fixture')
+        marker = self.root / 'executed.txt'
+        probe = self.root / 'probe.py'
+        probe.write_text('import pathlib,sys\npathlib.Path(' + repr(str(marker)) +
+                         ').write_text("EXECUTED")\nsys.stdout.write(sys.stdin.read())\n')
+        self.git(path, 'config', 'filter.review_probe.clean',
+                 '"' + sys.executable.replace('\\', '/') + '" "' + str(probe).replace('\\', '/') + '"')
+        tracked.write_text('after!\n')
+        info = tracked.stat()
+        os.utime(tracked, (info.st_atime, info.st_mtime + 2))
+        report = self.scan(path)
+        self.assertFalse(marker.exists(), 'A repository filter executed during the metadata scan')
+        self.assertEqual(report['summary']['errors'], 0)
+        self.assertEqual(report['repositories'][0]['tracked_changes'], 1)
+
+    def test_corrupt_upstream_is_a_coverage_error(self):
+        path = self.repo()
+        self.git(path, 'remote', 'add', 'origin', 'https://github.com/example/project.git')
+        self.git(path, 'config', 'branch.main.remote', 'origin')
+        self.git(path, 'config', 'branch.main.merge', 'refs/heads/main')
+        remote_ref = path / '.git/refs/remotes/origin/main'
+        remote_ref.parent.mkdir(parents=True)
+        remote_ref.write_text('invalid-reference\n')
+        report = self.scan(path)
+        self.assertGreater(report['summary']['errors'], 0)
+        self.assertIn('upstream', json.dumps(report['errors']))
+
+    def test_inherited_git_routing_cannot_escape_the_selected_root(self):
+        allowed = self.repo('allowed')
+        outside = self.repo('outside')
+        (outside / 'app.py').write_text('outside')
+        self.git(outside, 'commit', '-am', 'Different history')
+        expected = self.git(allowed, 'rev-parse', 'HEAD')
+        with patch.dict(os.environ, {'GIT_DIR': str(outside / '.git'), 'GIT_WORK_TREE': str(outside)}):
+            report = self.scan(allowed)
+        self.assertEqual(report['repositories'][0]['head'], expected)
+        self.assertEqual(report['summary']['errors'], 0)
+
+    def test_canonical_origin_groups_revisions_even_with_an_extra_remote(self):
+        first = self.repo('first')
+        second = self.root / 'second'
+        subprocess.run(['git', 'clone', str(first), str(second)], check=True, capture_output=True)
+        self.git(first, 'remote', 'add', 'origin', 'https://github.com/example/project.git')
+        self.git(second, 'remote', 'set-url', 'origin', 'https://github.com/example/project.git')
+        self.git(second, 'remote', 'add', 'backup', 'https://github.com/example/backup.git')
+        report = self.scan()
+        self.assertEqual(report['summary']['revision_groups'], 1)
+        self.assertEqual(report['summary']['checkouts'], 2)
+
+    def test_scp_remote_without_username_is_network(self):
+        path = self.repo()
+        self.git(path, 'remote', 'add', 'origin', 'github.com:example/project.git')
+        self.assertEqual(self.scan()['repositories'][0]['remote_kind'], 'network')
+
+    def test_root_timeout_keeps_other_root_evidence(self):
+        good = self.repo()
+        bad = self.root / 'timeout-root'
+        bad.mkdir()
+        real_git = inventory.git
+        def timeout_one_root(path, *args):
+            if inventory.display_path(path) == str(bad):
+                raise subprocess.TimeoutExpired('git', 20)
+            return real_git(path, *args)
+        with patch.object(inventory, 'git', side_effect=timeout_one_root):
+            report = inventory.scan([good, bad], study_id='TEST-1')
+        self.assertEqual(report['summary']['checkouts'], 1)
+        self.assertEqual(report['summary']['errors'], 1)
+        self.assertEqual(report['errors'][0]['error'], 'TimeoutExpired')
 
     def test_missing_root_is_visible_coverage_error(self):
         report = self.scan(self.root / 'does-not-exist')

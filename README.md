@@ -24,7 +24,7 @@ The package is designed to be GitHub-native and pilot-ready. It separates:
 
 ## Run a bounded recovery inventory
 
-The Center now includes a read-only instrument for finding work that needs a delivery decision. It accepts explicit authorized folders, reads local Git metadata, and reports unversioned code directories. It never fetches, pushes, runs discovered code, or reads conversation history.
+The Center now includes a read-only instrument for finding work that needs a delivery decision. It accepts explicit authorized folders, reads local Git metadata, and reports unversioned code directories. It never fetches, pushes, runs discovered scripts, or reads conversation history. Git may read working-tree bytes to determine status; no file contents enter the report. Configured clean/process filters and filesystem monitors are disabled, and inherited Git routing variables are removed for each command.
 
 Requires Python 3.11+ and Git on PATH; no Python packages are needed. First establish the study scope using [OPERATIONS.md](OPERATIONS.md), then run:
 
