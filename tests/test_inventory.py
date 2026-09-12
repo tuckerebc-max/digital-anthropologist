@@ -215,6 +215,13 @@ class InventoryTests(unittest.TestCase):
         self.git(path, 'remote', 'add', 'origin', 'github.com:example/project.git')
         self.assertEqual(self.scan()['repositories'][0]['remote_kind'], 'network')
 
+    def test_file_url_remote_is_local(self):
+        path = self.repo()
+        self.git(path, 'remote', 'add', 'origin', (self.root / 'remote.git').as_uri())
+        item = self.scan()['repositories'][0]
+        self.assertEqual(item['remote_kind'], 'local')
+        self.assertIn('local_remote_only', item['review_reasons'])
+
     def test_root_timeout_keeps_other_root_evidence(self):
         good = self.repo()
         bad = self.root / 'timeout-root'

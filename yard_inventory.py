@@ -100,7 +100,7 @@ def inspect_repository(path):
         remotes = []
         for name in remote_names:
             url = read('remote', 'get-url', name) or ''
-            scp = re.match(r'^[^/\\:]+:', url) and not re.match(r'^[a-zA-Z]:[\\/]', url)
+            scp = '://' not in url and re.match(r'^[^/\\:]+:', url) and not re.match(r'^[a-zA-Z]:[\\/]', url)
             kind = 'network' if ('://' in url and not url.startswith('file://')) or scp else 'local'
             remotes.append({'name': redact(name), 'url': safe_remote(url), 'kind': kind})
         origin = next((r['url'] for r in remotes if r['name'] == 'origin'), '')
@@ -255,6 +255,7 @@ def scan(roots, *, study_id):
             'Dependency/build directories, symlinks, Windows reparse directories, and bare repositories are excluded.',
             'The scan is not an atomic snapshot; active work can change during collection.',
             'Git may read working-tree bytes for status; no file contents are retained. Configured filters/fsmonitor are disabled.',
+            'Disabling content filters can mark filtered working copies as changed; confirm candidates with trusted project tooling.',
             'Submodule dirtiness is ignored in parent status; discovered submodule checkouts are inspected separately.',
             'Redaction covers common token formats and remote URL credentials, not all possible sensitive text. Review before sharing.',
         ],
